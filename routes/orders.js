@@ -263,23 +263,19 @@ router.get("/check", async (req, res) => {
 
 // =================== ADMIN ROUTES ===================
 
-// ✅ LOGIN ADMIN
+// ✅ LOGIN ADMIN — อ่านจาก env แทน hardcode
 router.post("/admin/login", (req, res) => {
   const { password } = req.body;
 
   if (!password) {
-    return res
-      .status(400)
-      .json({ success: false, message: "กรุณากรอกรหัสผ่าน" });
+    return res.status(400).json({ success: false, message: "กรุณากรอกรหัสผ่าน" });
   }
 
-  if (password === process.env.ADMIN_PASS) {
+  if (password === process.env.ADMIN_PASS) {   // ← ใช้ชื่อตัวแปรเดิมที่มีใน env
     return res.json({ success: true });
-  } else {
-    return res
-      .status(401)
-      .json({ success: false, message: "รหัสผ่านไม่ถูกต้อง" });
   }
+
+  return res.status(401).json({ success: false, message: "รหัสผ่านไม่ถูกต้อง" });
 });
 
 // GET ALL ORDERS
