@@ -18,6 +18,7 @@ const storage = multer.diskStorage({
     cb(null, `slip_${Date.now()}${ext}`);
   },
 });
+
 const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
@@ -31,7 +32,10 @@ const upload = multer({
 // =================== EMAIL ===================
 const transporter = nodemailer.createTransport({
   service: "gmail",
-  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
 });
 
 const STATUS_LABEL = {
@@ -46,12 +50,19 @@ const STATUS_LABEL = {
 
 async function sendStatusEmail(order, status, adminNote) {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) return;
+
   try {
     const label = STATUS_LABEL[status] || status;
-    const noteHtml = adminNote ? `<p><strong>หมายเหตุ:</strong> ${adminNote}</p>` : "";
-    const reuploadMsg = status === "slip_rejected"
-      ? `<p style="color:red;"><strong>⚠️ โปรดแก้ไขสลิปให้ถูกต้อง</strong> — เข้าหน้าเช็คสถานะแล้วกด "อัปโหลดสลิปใหม่"</p>`
+
+    const noteHtml = adminNote
+      ? `<p><strong>หมายเหตุ:</strong> ${adminNote}</p>`
       : "";
+
+    const reuploadMsg =
+      status === "slip_rejected"
+        ? `<p style="color:red;"><strong>⚠️ โปรดแก้ไขสลิปให้ถูกต้อง</strong> — เข้าหน้าเช็คสถานะแล้วกด "อัปโหลดสลิปใหม่"</p>`
+        : "";
+
     await transporter.sendMail({
       from: `"KUSCCSC SHOP" <${process.env.EMAIL_USER}>`,
       to: order.customerEmail,
@@ -78,10 +89,13 @@ async function sendStatusEmail(order, status, adminNote) {
 // =================== HELPERS ===================
 function generateOrderCode() {
   const date = new Date();
-  const ymd = date.getFullYear().toString() +
+  const ymd =
+    date.getFullYear().toString() +
     String(date.getMonth() + 1).padStart(2, "0") +
     String(date.getDate()).padStart(2, "0");
-  const rand = Math.random().toString(36).substring(2, 8).toUpperCase(); // 6 ตัว
+
+  const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+
   return `KU-${ymd}-${rand}`;
 }
 
@@ -96,60 +110,136 @@ function getDeliveryFee(method) {
 // POST /api/orders
 router.post("/", async (req, res) => {
   try {
-    const { studentId, customerName, customerPhone, customerEmail,
-            deliveryMethod, dormName, roomNumber, items } = req.body;
-    if (!items || items.length === 0)
+    const {
+      studentId,
+      customerName,
+      customerPhone,
+      customerEmail,
+      deliveryMethod,
+      dormName,
+      roomNumber,
+      items,
+    } = req.body;
+
+    if (!items || items.length === 0) {
       return res.status(400).json({ message: "No items in order" });
-    const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-    const deliveryFee = getDeliveryFee(deliveryMethod);
-    const total = subtotal + deliveryFee;
-    const order = new Order({
-      orderCode: generateOrderCode(),
-      studentId, customerName, customerPhone, customerEmail,
-      deliveryMethod, dormName: dormName || "", roomNumber: roomNumber || "",
-      items, subtotal, deliveryFee, total, status: "pending_payment",
-    });
-    await order.save();
-    res.status(201).json({ success: true, orderCode: order.orderCode, orderId: order._id, total });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Error creating order", error: err.message });
-  }
-});
-
-// POST /api/orders/:orderCode/slip — upload + re-upload
-router.post("/:orderCode/slip", upload.single("slip"), async (req, res) => {
-  try {
-    const order = await Order.findOne({ orderCode: req.params.orderCode });
-    if (!order) return res.status(404).json({ message: "Order not found" });
-
-    const allowed = ["pending_payment", "pending_verify", "slip_rejected"];
-    if (!allowed.includes(order.status))
-      return res.status(400).json({ message: "ไม่สามารถอัปโหลดสลิปในสถานะนี้ได้" });
-
-    // ลบสลิปเดิม
-    if (order.slipUrl) {
-      const oldPath = path.join(__dirname, "../public", order.slipUrl);
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
     }
 
-    order.slipUrl = `/slips/${req.file.filename}`;
-    order.slipUploadedAt = new Date();
-    order.status = "pending_verify";
+    const subtotal = items.reduce(
+      (sum, i) => sum + i.price * i.quantity,
+      0
+    );
+
+    const deliveryFee = getDeliveryFee(deliveryMethod);
+    const total = subtotal + deliveryFee;
+
+    const order = new Order({
+      orderCode: generateOrderCode(),
+      studentId,
+      customerName,
+      customerPhone,
+      customerEmail,
+      deliveryMethod,
+      dormName: dormName || "",
+      roomNumber: roomNumber || "",
+      items,
+      subtotal,
+      deliveryFee,
+      total,
+      status: "pending_payment",
+    });
+
     await order.save();
-    res.json({ success: true, slipUrl: order.slipUrl, status: order.status });
+
+    res.status(201).json({
+      success: true,
+      orderCode: order.orderCode,
+      orderId: order._id,
+      total,
+    });
   } catch (err) {
-    res.status(500).json({ message: "Error uploading slip", error: err.message });
+    console.error(err);
+    res.status(500).json({
+      message: "Error creating order",
+      error: err.message,
+    });
   }
 });
+
+// POST /api/orders/:orderCode/slip
+router.post(
+  "/:orderCode/slip",
+  upload.single("slip"),
+  async (req, res) => {
+    try {
+      const order = await Order.findOne({
+        orderCode: req.params.orderCode,
+      });
+
+      if (!order)
+        return res.status(404).json({ message: "Order not found" });
+
+      const allowed = [
+        "pending_payment",
+        "pending_verify",
+        "slip_rejected",
+      ];
+
+      if (!allowed.includes(order.status)) {
+        return res
+          .status(400)
+          .json({ message: "ไม่สามารถอัปโหลดสลิปในสถานะนี้ได้" });
+      }
+
+      // ลบสลิปเดิม
+      if (order.slipUrl) {
+        const oldPath = path.join(
+          __dirname,
+          "../public",
+          order.slipUrl
+        );
+        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      }
+
+      order.slipUrl = `/slips/${req.file.filename}`;
+      order.slipUploadedAt = new Date();
+      order.status = "pending_verify";
+
+      await order.save();
+
+      res.json({
+        success: true,
+        slipUrl: order.slipUrl,
+        status: order.status,
+      });
+    } catch (err) {
+      res.status(500).json({
+        message: "Error uploading slip",
+        error: err.message,
+      });
+    }
+  }
+);
 
 // GET /api/orders/check
 router.get("/check", async (req, res) => {
   try {
     const { code, phone } = req.query;
-    if (!code || !phone) return res.status(400).json({ message: "Missing code or phone" });
-    const order = await Order.findOne({ orderCode: code, customerPhone: phone });
-    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    if (!code || !phone) {
+      return res
+        .status(400)
+        .json({ message: "Missing code or phone" });
+    }
+
+    const order = await Order.findOne({
+      orderCode: code,
+      customerPhone: phone,
+    });
+
+    if (!order)
+      return res.status(404).json({ message: "Order not found" });
+
     res.json({
       orderCode: order.orderCode,
       customerName: order.customerName,
@@ -163,7 +253,7 @@ router.get("/check", async (req, res) => {
       slipUrl: order.slipUrl,
       slipUploadedAt: order.slipUploadedAt,
       status: order.status,
-      adminNote: order.adminNote, // ข้อ 2
+      adminNote: order.adminNote,
       createdAt: order.createdAt,
     });
   } catch (err) {
@@ -173,46 +263,93 @@ router.get("/check", async (req, res) => {
 
 // =================== ADMIN ROUTES ===================
 
+// ✅ LOGIN ADMIN
+router.post("/admin/login", (req, res) => {
+  const { password } = req.body;
+
+  if (!password) {
+    return res
+      .status(400)
+      .json({ success: false, message: "กรุณากรอกรหัสผ่าน" });
+  }
+
+  if (password === process.env.ADMIN_PASS) {
+    return res.json({ success: true });
+  } else {
+    return res
+      .status(401)
+      .json({ success: false, message: "รหัสผ่านไม่ถูกต้อง" });
+  }
+});
+
+// GET ALL ORDERS
 router.get("/admin/all", async (req, res) => {
   try {
     const { status } = req.query;
-    const filter = status && status !== "all" ? { status } : {};
-    const orders = await Order.find(filter).sort({ createdAt: -1 });
+
+    const filter =
+      status && status !== "all" ? { status } : {};
+
+    const orders = await Order.find(filter).sort({
+      createdAt: -1,
+    });
+
     res.json(orders);
   } catch (err) {
     res.status(500).json({ message: "Error", error: err.message });
   }
 });
 
+// UPDATE STATUS
 router.patch("/admin/:id/status", async (req, res) => {
   try {
     const { status, adminNote } = req.body;
+
     let finalNote = adminNote || "";
-    // ข้อ 5.1: auto-append เมื่อ reject
-    if (status === "slip_rejected" && !finalNote.includes("โปรดแก้ไขสลิป")) {
-      finalNote = finalNote ? `${finalNote} — โปรดแก้ไขสลิปให้ถูกต้อง` : "โปรดแก้ไขสลิปให้ถูกต้อง";
+
+    if (
+      status === "slip_rejected" &&
+      !finalNote.includes("โปรดแก้ไขสลิป")
+    ) {
+      finalNote = finalNote
+        ? `${finalNote} — โปรดแก้ไขสลิปให้ถูกต้อง`
+        : "โปรดแก้ไขสลิปให้ถูกต้อง";
     }
+
     const order = await Order.findByIdAndUpdate(
-      req.params.id, { status, adminNote: finalNote }, { new: true }
+      req.params.id,
+      { status, adminNote: finalNote },
+      { new: true }
     );
-    if (!order) return res.status(404).json({ message: "Order not found" });
-    await sendStatusEmail(order, status, finalNote); // ข้อ 5.2
+
+    if (!order)
+      return res.status(404).json({ message: "Order not found" });
+
+    await sendStatusEmail(order, status, finalNote);
+
     res.json({ success: true, order });
   } catch (err) {
     res.status(500).json({ message: "Error", error: err.message });
   }
 });
 
+// DELETE ORDER
 router.delete("/admin/:id", async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
+
     if (order?.slipUrl) {
-      // แก้ตรงนี้: ตัด leading slash ออกก่อน join
       const relativePath = order.slipUrl.replace(/^\//, "");
-      const p = path.join(__dirname, "../public", relativePath);
+      const p = path.join(
+        __dirname,
+        "../public",
+        relativePath
+      );
       if (fs.existsSync(p)) fs.unlinkSync(p);
     }
+
     await Order.findByIdAndDelete(req.params.id);
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ message: "Error", error: err.message });
