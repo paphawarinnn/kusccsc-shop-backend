@@ -261,24 +261,21 @@ router.get("/check", async (req, res) => {
   }
 });
 
-// =================== ADMIN ROUTES ===================
-
 router.post("/admin/login", (req, res) => {
-  const { password } = req.body;
+  const { username, password } = req.body;
 
+  console.log("username:", JSON.stringify(username));
   console.log("password:", JSON.stringify(password));
-  console.log("env:", JSON.stringify(process.env.ADMIN_PASSWORD));
-  console.log("match:", password === process.env.ADMIN_PASSWORD);
 
-  if (!password) {
-    return res.status(400).json({ success: false, message: "กรุณากรอกรหัสผ่าน" });
+  if (!username || !password) {
+    return res.status(400).json({ success: false, message: "กรุณากรอกชื่อผู้ใช้และรหัสผ่าน" });
   }
 
-  if (password === process.env.ADMIN_PASSWORD) {
+  if (username === process.env.ADMIN_USERNAME && password === process.env.ADMIN_PASSWORD) {
     return res.json({ success: true });
   }
 
-  return res.status(401).json({ success: false, message: "รหัสผ่านไม่ถูกต้อง" });
+  return res.status(401).json({ success: false, message: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" });
 });
 // GET ALL ORDERS
 router.get("/admin/all", async (req, res) => {
