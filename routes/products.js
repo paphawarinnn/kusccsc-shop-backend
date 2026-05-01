@@ -7,8 +7,6 @@ const path = require("path");
 const fs = require("fs");
 const { uploadToDrive, deleteFromDrive } = require("../utils/gdrive");
 
-const upload = multer({ storage: multer.memoryStorage() });
-
 // ========================
 // 📦 MULTER SETUP
 // ========================
@@ -31,10 +29,9 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
 });
-
 // ========================
 // 📌 GET ALL PRODUCTS
 // ========================
