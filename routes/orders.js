@@ -37,9 +37,9 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  connectionTimeout: 5000,  // ← เพิ่ม
-  greetingTimeout: 5000,    // ← เพิ่ม
-  socketTimeout: 5000,      // ← เพิ่ม
+  connectionTimeout: 3000,
+  greetingTimeout: 3000,
+  socketTimeout: 3000,
 });
 
 const STATUS_LABEL = {
@@ -190,6 +190,19 @@ router.get("/admin/all", async (req, res) => {
     res.status(500).json({ message: "Error", error: err.message });
   }
 });
+router.get("/admin/test-email", async (req, res) => {
+  try {
+    await transporter.sendMail({
+      from: `"KUSCCSC SHOP" <${process.env.EMAIL_USER}>`,
+      to: process.env.EMAIL_USER,
+      subject: "Test Email",
+      html: "<p>ทดสอบส่งเมล</p>",
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
 
 // UPDATE STATUS
 router.patch("/admin/:id/status", async (req, res) => {
@@ -209,8 +222,14 @@ router.patch("/admin/:id/status", async (req, res) => {
 
     if (!order) return res.status(404).json({ message: "Order not found" });
 
-    await sendStatusEmail(order, status, finalNote);
+    // ✅ ส่ง response ก่อนเลย ไม่รอ email
     res.json({ success: true, order });
+
+    // ✅ ส่ง email ทีหลัง (background)
+    sendStatusEmail(order, status, finalNote).catch(err =>
+      console.error("Email error:", err.message)
+    );
+
   } catch (err) {
     res.status(500).json({ message: "Error", error: err.message });
   }
