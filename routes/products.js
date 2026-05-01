@@ -5,6 +5,9 @@ const Product = require("../models/Product");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const { uploadToDrive, deleteFromDrive } = require("../utils/gdrive");
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 // ========================
 // 📦 MULTER SETUP
@@ -59,30 +62,7 @@ router.get("/admin/all", async (req, res) => {
   }
 });
 
-// แก้ตรง POST route
-router.post("/", upload.array("images", 5), async (req, res) => {
-  try {
-    const mainImage = req.files?.[0]?.filename || req.body.image || "";
-    const extraImages = req.files?.slice(1).map(f => f.filename) || [];
-
-    const product = new Product({
-      name: req.body.name,
-      price: req.body.price,
-      description: req.body.description || "",
-      store: req.body.store || "",
-      stock: req.body.stock || 999,
-      image: mainImage,
-      images: extraImages,
-    });
-    await product.save();
-    res.status(201).json(product);
-  } catch (err) {
-    res.status(500).json({ message: "Error creating product", error: err });
-  }
-});
-// ========================
-// 📌 UPDATE PRODUCT + UPLOAD IMAGE ✅
-// ========================
+/* ================= UPDATE PRODUCT ================= */
 router.put("/:id", upload.array("images", 5), async (req, res) => {
   try {
     const updateData = {
@@ -93,11 +73,30 @@ router.put("/:id", upload.array("images", 5), async (req, res) => {
       stock: req.body.stock || 999,
     };
 
-    // ถ้ามีอัพรูปใหม่ค่อย update รูป (ถ้าไม่มีรูปใหม่ รูปเดิมยังคงอยู่)
     if (req.files && req.files.length > 0) {
-      updateData.image = req.files[0].filename;
-      updateData.images = req.files.slice(1).map(f => f.filename);
+      const old = await Product.findById(req.params.id);
+
+      if (old?.image) await deleteFromDrive(old.image);
+      for (const img of old?.images || []) {
+        await deleteFromDrive(img);
+      }
+
+      const urls = [];
+
+      for (const file of req.files) {
+        const url = await uploadToDrive(
+          file.buffer,
+          file.mimetype,
+          file.originalname,
+          process.env.GDRIVE_FOLDER_PRODUCTS  // ← folder สินค้า
+        );
+        urls.push(url);
+      }
+
+      updateData.image = urls[0] || "";
+      updateData.images = urls.slice(1);
     }
+
     const updated = await Product.findByIdAndUpdate(
       req.params.id,
       updateData,
@@ -106,45 +105,34 @@ router.put("/:id", upload.array("images", 5), async (req, res) => {
 
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ message: "Error updating product", error: err });
+    res.status(500).json({
+      message: "Error updating product",
+      error: err.message,
+    });
   }
 });
 
-// ========================
-// 📌 DELETE PRODUCT
-// ========================
+/* ================= DELETE PRODUCT ================= */
 router.delete("/:id", async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ message: "Product not found" });
 
-    const deleteFile = (file) => {
-      return new Promise((resolve) => {
-        if (!file) return resolve();
+    if (!product)
+      return res.status(404).json({ message: "Product not found" });
 
-        const imgPath = path.join(__dirname, "../public/images", file);
-
-        fs.unlink(imgPath, (err) => {
-          // 🔥 ไม่ต้อง log อะไรเลย (หรือจะ log เฉพาะ error ก็ได้)
-          resolve();
-        });
-      });
-    };
-
-    // ลบรูปหลัก
-    await deleteFile(product.image);
-
-    // ลบรูปเพิ่มเติม
-    if (product.images && product.images.length > 0) {
-      await Promise.all(product.images.map(img => deleteFile(img)));
+    if (product.image) await deleteFromDrive(product.image);
+    for (const img of product.images || []) {
+      await deleteFromDrive(img);
     }
 
     await Product.findByIdAndDelete(req.params.id);
 
     res.json({ message: "Deleted successfully" });
   } catch (err) {
-    console.error(err);
-    res.status(500).json(err);
+    res.status(500).json({
+      message: "Error deleting product",
+      error: err.message,
+    });
   }
 });
 

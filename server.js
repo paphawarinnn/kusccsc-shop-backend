@@ -11,7 +11,7 @@ app.use(express.json());
 
 app.use("/slips", express.static(path.join(__dirname, "public/slips")));
 app.use("/images", express.static(path.join(__dirname, "public/images")));
-
+app.use(express.urlencoded({ extended: true }));
 // MongoDB connect
 mongoose.connect(process.env.MONGO_URL)
   .then(() => console.log("MongoDB connected"))

@@ -5,6 +5,9 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
+const { uploadToDrive, deleteFromDrive } = require("../utils/gdrive");
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 // =================== MULTER ===================
 const storage = multer.diskStorage({
@@ -167,59 +170,53 @@ router.post("/", async (req, res) => {
 });
 
 // POST /api/orders/:orderCode/slip
-router.post(
-  "/:orderCode/slip",
-  upload.single("slip"),
-  async (req, res) => {
-    try {
-      const order = await Order.findOne({
-        orderCode: req.params.orderCode,
-      });
+/* ================= UPLOAD SLIP ================= */
+router.post("/:orderCode/slip", upload.single("slip"), async (req, res) => {
+  try {
+    const order = await Order.findOne({
+      orderCode: req.params.orderCode,
+    });
 
-      if (!order)
-        return res.status(404).json({ message: "Order not found" });
+    if (!order)
+      return res.status(404).json({ message: "Order not found" });
 
-      const allowed = [
-        "pending_payment",
-        "pending_verify",
-        "slip_rejected",
-      ];
+    const allowed = ["pending_payment", "pending_verify", "slip_rejected"];
 
-      if (!allowed.includes(order.status)) {
-        return res
-          .status(400)
-          .json({ message: "ไม่สามารถอัปโหลดสลิปในสถานะนี้ได้" });
-      }
-
-      // ลบสลิปเดิม
-      if (order.slipUrl) {
-        const oldPath = path.join(
-          __dirname,
-          "../public",
-          order.slipUrl
-        );
-        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-      }
-
-      order.slipUrl = `/slips/${req.file.filename}`;
-      order.slipUploadedAt = new Date();
-      order.status = "pending_verify";
-
-      await order.save();
-
-      res.json({
-        success: true,
-        slipUrl: order.slipUrl,
-        status: order.status,
-      });
-    } catch (err) {
-      res.status(500).json({
-        message: "Error uploading slip",
-        error: err.message,
+    if (!allowed.includes(order.status)) {
+      return res.status(400).json({
+        message: "ไม่สามารถอัปโหลดสลิปในสถานะนี้ได้",
       });
     }
+
+    if (order.slipUrl) {
+      await deleteFromDrive(order.slipUrl);
+    }
+
+    const url = await uploadToDrive(
+      req.file.buffer,
+      req.file.mimetype,
+      req.file.originalname,
+      process.env.GDRIVE_FOLDER_SLIPS     // ← folder สลิป
+    );
+
+    order.slipUrl = url;
+    order.slipUploadedAt = new Date();
+    order.status = "pending_verify";
+
+    await order.save();
+
+    res.json({
+      success: true,
+      slipUrl: order.slipUrl,
+      status: order.status,
+    });
+  } catch (err) {
+    res.status(500).json({
+      message: "Error uploading slip",
+      error: err.message,
+    });
   }
-);
+});
 
 // GET /api/orders/check
 router.get("/check", async (req, res) => {
