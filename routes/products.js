@@ -74,6 +74,7 @@ router.post("/", upload.array("images", 5), async (req, res) => {
     await product.save();
     res.status(201).json(product);
   } catch (err) {
+    console.error("🔴 POST /products error:", err); // ← เพิ่มบรรทัดนี้
     res.status(500).json({ message: "Error creating product", error: err.message });
   }
 });
