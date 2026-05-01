@@ -13,6 +13,10 @@ const drive = google.drive({ version: "v3", auth });
 
 // 👉 Upload
 async function uploadToDrive(buffer, mimetype, originalname, folderId) {
+    console.log("📁 folderId:", folderId);           // ← เพิ่ม
+    console.log("📧 client_email:", process.env.GDRIVE_CLIENT_EMAIL); // ← เพิ่ม
+    console.log("🔑 private_key exists:", !!process.env.GDRIVE_PRIVATE_KEY); // ← เพิ่ม
+
     const filename = `product_${Date.now()}_${originalname}`;
 
     const res = await drive.files.create({
