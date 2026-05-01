@@ -130,29 +130,7 @@ router.post("/", async (req, res) => {
 });
 
 
-// POST /api/orders/:orderCode/slip
-router.post("/:orderCode/slip", upload.single("slip"), async (req, res) => {
-  try {
-    const order = await Order.findOne({ orderCode: req.params.orderCode });
-    if (!order) return res.status(404).json({ message: "Order not found" });
 
-    const allowed = ["pending_payment", "pending_verify", "slip_rejected"];
-    if (!allowed.includes(order.status)) {
-      return res.status(400).json({ message: "ไม่สามารถอัปโหลดสลิปในสถานะนี้ได้" });
-    }
-
-    const url = await uploadToCloudinary(req.file.buffer, "shop-slips");
-
-    order.slipUrl = url;
-    order.slipUploadedAt = new Date();
-    order.status = "pending_verify";
-
-    await order.save();
-    res.json({ success: true, slipUrl: order.slipUrl, status: order.status });
-  } catch (err) {
-    res.status(500).json({ message: "Error uploading slip", error: err.message });
-  }
-});
 
 // CHECK ORDER
 router.get("/check", async (req, res) => {
@@ -182,6 +160,20 @@ router.get("/check", async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: "Error", error: err.message });
   }
+});
+// ADMIN LOGIN
+router.post("/admin/login", (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).json({ success: false, message: "กรุณากรอกชื่อผู้ใช้และรหัสผ่าน" });
+  }
+
+  if (username === process.env.ADMIN_USERNAME && password === process.env.ADMIN_PASSWORD) {
+    return res.json({ success: true });
+  }
+
+  return res.status(401).json({ success: false, message: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" });
 });
 
 // ADMIN GET ALL ORDERS
@@ -230,5 +222,27 @@ router.delete("/admin/:id", async (req, res) => {
     res.status(500).json({ message: "Error", error: err.message });
   }
 });
+// POST /api/orders/:orderCode/slip
+router.post("/:orderCode/slip", upload.single("slip"), async (req, res) => {
+  try {
+    const order = await Order.findOne({ orderCode: req.params.orderCode });
+    if (!order) return res.status(404).json({ message: "Order not found" });
 
+    const allowed = ["pending_payment", "pending_verify", "slip_rejected"];
+    if (!allowed.includes(order.status)) {
+      return res.status(400).json({ message: "ไม่สามารถอัปโหลดสลิปในสถานะนี้ได้" });
+    }
+
+    const url = await uploadToCloudinary(req.file.buffer, "shop-slips");
+
+    order.slipUrl = url;
+    order.slipUploadedAt = new Date();
+    order.status = "pending_verify";
+
+    await order.save();
+    res.json({ success: true, slipUrl: order.slipUrl, status: order.status });
+  } catch (err) {
+    res.status(500).json({ message: "Error uploading slip", error: err.message });
+  }
+});
 module.exports = router;
