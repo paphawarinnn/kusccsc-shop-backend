@@ -5,7 +5,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
-const { uploadToDrive, deleteFromDrive } = require("../utils/gdrive");
+const { uploadToCloudinary } = require("../utils/cloudinary");
 
 // =================== MULTER ===================
 const storage = multer.diskStorage({
@@ -22,15 +22,11 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = ["image/jpeg", "image/png", "image/webp"];
-
-    if (allowed.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only JPG/PNG/WEBP allowed"));
-    }
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error("Only JPG/PNG/WEBP allowed"));
   },
 });
 
@@ -55,18 +51,12 @@ const STATUS_LABEL = {
 
 async function sendStatusEmail(order, status, adminNote) {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) return;
-
   try {
     const label = STATUS_LABEL[status] || status;
-
-    const noteHtml = adminNote
-      ? `<p><strong>หมายเหตุ:</strong> ${adminNote}</p>`
+    const noteHtml = adminNote ? `<p><strong>หมายเหตุ:</strong> ${adminNote}</p>` : "";
+    const reuploadMsg = status === "slip_rejected"
+      ? `<p style="color:red;"><strong>⚠️ โปรดแก้ไขสลิปให้ถูกต้อง</strong> — เข้าหน้าเช็คสถานะแล้วกด "อัปโหลดสลิปใหม่"</p>`
       : "";
-
-    const reuploadMsg =
-      status === "slip_rejected"
-        ? `<p style="color:red;"><strong>⚠️ โปรดแก้ไขสลิปให้ถูกต้อง</strong> — เข้าหน้าเช็คสถานะแล้วกด "อัปโหลดสลิปใหม่"</p>`
-        : "";
 
     await transporter.sendMail({
       from: `"KUSCCSC SHOP" <${process.env.EMAIL_USER}>`,
@@ -91,16 +81,14 @@ async function sendStatusEmail(order, status, adminNote) {
   }
 }
 
+
 // =================== HELPERS ===================
 function generateOrderCode() {
   const date = new Date();
-  const ymd =
-    date.getFullYear().toString() +
+  const ymd = date.getFullYear().toString() +
     String(date.getMonth() + 1).padStart(2, "0") +
     String(date.getDate()).padStart(2, "0");
-
   const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
-
   return `KU-${ymd}-${rand}`;
 }
 
@@ -110,134 +98,70 @@ function getDeliveryFee(method) {
   return 0;
 }
 
-// =================== CUSTOMER ROUTES ===================
-
-// POST /api/orders
+// CREATE ORDER
 router.post("/", async (req, res) => {
   try {
-    const {
-      studentId,
-      customerName,
-      customerPhone,
-      customerEmail,
-      deliveryMethod,
-      dormName,
-      roomNumber,
-      items,
-    } = req.body;
+    const { studentId, customerName, customerPhone, customerEmail, deliveryMethod, dormName, roomNumber, items } = req.body;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ message: "No items in order" });
     }
 
-    const subtotal = items.reduce(
-      (sum, i) => sum + i.price * i.quantity,
-      0
-    );
-
+    const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
     const deliveryFee = getDeliveryFee(deliveryMethod);
     const total = subtotal + deliveryFee;
 
     const order = new Order({
       orderCode: generateOrderCode(),
-      studentId,
-      customerName,
-      customerPhone,
-      customerEmail,
+      studentId, customerName, customerPhone, customerEmail,
       deliveryMethod,
       dormName: dormName || "",
       roomNumber: roomNumber || "",
-      items,
-      subtotal,
-      deliveryFee,
-      total,
+      items, subtotal, deliveryFee, total,
       status: "pending_payment",
     });
 
     await order.save();
-
-    res.status(201).json({
-      success: true,
-      orderCode: order.orderCode,
-      orderId: order._id,
-      total,
-    });
+    res.status(201).json({ success: true, orderCode: order.orderCode, orderId: order._id, total });
   } catch (err) {
     console.error(err);
-    res.status(500).json({
-      message: "Error creating order",
-      error: err.message,
-    });
+    res.status(500).json({ message: "Error creating order", error: err.message });
   }
 });
 
+
 // POST /api/orders/:orderCode/slip
-/* ================= UPLOAD SLIP ================= */
 router.post("/:orderCode/slip", upload.single("slip"), async (req, res) => {
   try {
-    const order = await Order.findOne({
-      orderCode: req.params.orderCode,
-    });
-
-    if (!order)
-      return res.status(404).json({ message: "Order not found" });
+    const order = await Order.findOne({ orderCode: req.params.orderCode });
+    if (!order) return res.status(404).json({ message: "Order not found" });
 
     const allowed = ["pending_payment", "pending_verify", "slip_rejected"];
-
     if (!allowed.includes(order.status)) {
-      return res.status(400).json({
-        message: "ไม่สามารถอัปโหลดสลิปในสถานะนี้ได้",
-      });
+      return res.status(400).json({ message: "ไม่สามารถอัปโหลดสลิปในสถานะนี้ได้" });
     }
 
-    if (order.slipUrl) {
-      await deleteFromDrive(order.slipUrl);
-    }
-
-    const url = await uploadToDrive(
-      req.file.buffer,
-      req.file.mimetype,
-      req.file.originalname,
-      process.env.GDRIVE_FOLDER_SLIPS     // ← folder สลิป
-    );
+    const url = await uploadToCloudinary(req.file.buffer, "shop-slips");
 
     order.slipUrl = url;
     order.slipUploadedAt = new Date();
     order.status = "pending_verify";
 
     await order.save();
-
-    res.json({
-      success: true,
-      slipUrl: order.slipUrl,
-      status: order.status,
-    });
+    res.json({ success: true, slipUrl: order.slipUrl, status: order.status });
   } catch (err) {
-    res.status(500).json({
-      message: "Error uploading slip",
-      error: err.message,
-    });
+    res.status(500).json({ message: "Error uploading slip", error: err.message });
   }
 });
 
-// GET /api/orders/check
+// CHECK ORDER
 router.get("/check", async (req, res) => {
   try {
     const { code, phone } = req.query;
+    if (!code || !phone) return res.status(400).json({ message: "Missing code or phone" });
 
-    if (!code || !phone) {
-      return res
-        .status(400)
-        .json({ message: "Missing code or phone" });
-    }
-
-    const order = await Order.findOne({
-      orderCode: code,
-      customerPhone: phone,
-    });
-
-    if (!order)
-      return res.status(404).json({ message: "Order not found" });
+    const order = await Order.findOne({ orderCode: code, customerPhone: phone });
+    if (!order) return res.status(404).json({ message: "Order not found" });
 
     res.json({
       orderCode: order.orderCode,
@@ -260,31 +184,12 @@ router.get("/check", async (req, res) => {
   }
 });
 
-router.post("/admin/login", (req, res) => {
-  const { username, password } = req.body;
-
-  if (!username || !password) {
-    return res.status(400).json({ success: false, message: "กรุณากรอกชื่อผู้ใช้และรหัสผ่าน" });
-  }
-
-  if (username === process.env.ADMIN_USERNAME && password === process.env.ADMIN_PASSWORD) {
-    return res.json({ success: true });
-  }
-
-  return res.status(401).json({ success: false, message: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" });
-});
-// GET ALL ORDERS
+// ADMIN GET ALL ORDERS
 router.get("/admin/all", async (req, res) => {
   try {
     const { status } = req.query;
-
-    const filter =
-      status && status !== "all" ? { status } : {};
-
-    const orders = await Order.find(filter).sort({
-      createdAt: -1,
-    });
-
+    const filter = status && status !== "all" ? { status } : {};
+    const orders = await Order.find(filter).sort({ createdAt: -1 });
     res.json(orders);
   } catch (err) {
     res.status(500).json({ message: "Error", error: err.message });
@@ -295,16 +200,10 @@ router.get("/admin/all", async (req, res) => {
 router.patch("/admin/:id/status", async (req, res) => {
   try {
     const { status, adminNote } = req.body;
-
     let finalNote = adminNote || "";
 
-    if (
-      status === "slip_rejected" &&
-      !finalNote.includes("โปรดแก้ไขสลิป")
-    ) {
-      finalNote = finalNote
-        ? `${finalNote} — โปรดแก้ไขสลิปให้ถูกต้อง`
-        : "โปรดแก้ไขสลิปให้ถูกต้อง";
+    if (status === "slip_rejected" && !finalNote.includes("โปรดแก้ไขสลิป")) {
+      finalNote = finalNote ? `${finalNote} — โปรดแก้ไขสลิปให้ถูกต้อง` : "โปรดแก้ไขสลิปให้ถูกต้อง";
     }
 
     const order = await Order.findByIdAndUpdate(
@@ -313,11 +212,9 @@ router.patch("/admin/:id/status", async (req, res) => {
       { new: true }
     );
 
-    if (!order)
-      return res.status(404).json({ message: "Order not found" });
+    if (!order) return res.status(404).json({ message: "Order not found" });
 
     await sendStatusEmail(order, status, finalNote);
-
     res.json({ success: true, order });
   } catch (err) {
     res.status(500).json({ message: "Error", error: err.message });
@@ -327,20 +224,7 @@ router.patch("/admin/:id/status", async (req, res) => {
 // DELETE ORDER
 router.delete("/admin/:id", async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id);
-
-    if (order?.slipUrl) {
-      const relativePath = order.slipUrl.replace(/^\//, "");
-      const p = path.join(
-        __dirname,
-        "../public",
-        relativePath
-      );
-      if (fs.existsSync(p)) fs.unlinkSync(p);
-    }
-
     await Order.findByIdAndDelete(req.params.id);
-
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ message: "Error", error: err.message });
