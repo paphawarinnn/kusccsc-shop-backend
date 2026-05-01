@@ -242,7 +242,9 @@ router.post("/:orderCode/slip", upload.single("slip"), async (req, res) => {
     await order.save();
     res.json({ success: true, slipUrl: order.slipUrl, status: order.status });
   } catch (err) {
+    console.error("🔴 slip error:", err.message); // ← เพิ่ม
     res.status(500).json({ message: "Error uploading slip", error: err.message });
   }
+
 });
 module.exports = router;
