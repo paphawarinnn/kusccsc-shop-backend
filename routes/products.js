@@ -46,7 +46,37 @@ router.get("/", async (req, res) => {
     res.status(500).json({ message: "Error fetching products", error: err });
   }
 });
+/* ================= CREATE PRODUCT ================= */
+router.post("/", upload.array("images", 5), async (req, res) => {
+  try {
+    const urls = [];
 
+    for (const file of req.files) {
+      const url = await uploadToDrive(
+        file.buffer,
+        file.mimetype,
+        file.originalname,
+        process.env.GDRIVE_FOLDER_PRODUCTS
+      );
+      urls.push(url);
+    }
+
+    const product = new Product({
+      name: req.body.name,
+      price: req.body.price,
+      description: req.body.description || "",
+      store: req.body.store || "",
+      stock: req.body.stock || 999,
+      image: urls[0] || "",
+      images: urls.slice(1),
+    });
+
+    await product.save();
+    res.status(201).json(product);
+  } catch (err) {
+    res.status(500).json({ message: "Error creating product", error: err.message });
+  }
+});
 // ========================
 // 📌 ADMIN GET ALL
 // ========================

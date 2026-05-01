@@ -263,9 +263,6 @@ router.get("/check", async (req, res) => {
 router.post("/admin/login", (req, res) => {
   const { username, password } = req.body;
 
-  console.log("username:", JSON.stringify(username));
-  console.log("password:", JSON.stringify(password));
-
   if (!username || !password) {
     return res.status(400).json({ success: false, message: "กรุณากรอกชื่อผู้ใช้และรหัสผ่าน" });
   }
