@@ -55,7 +55,7 @@ router.post("/", upload.array("images", 5), async (req, res) => {
       price: req.body.price,
       description: req.body.description || "",
       store: req.body.store || "",
-      stock: req.body.stock || 999,
+      colors: req.body.colors ? JSON.parse(req.body.colors) : [],
       image: urls[0] || "",
       images: urls.slice(1),
     });
@@ -87,7 +87,7 @@ router.put("/:id", upload.array("images", 5), async (req, res) => {
       price: req.body.price,
       description: req.body.description || "",
       store: req.body.store || "",
-      stock: req.body.stock || 999,
+      colors: req.body.colors ? JSON.parse(req.body.colors) : [],
     };
 
     if (req.files && req.files.length > 0) {

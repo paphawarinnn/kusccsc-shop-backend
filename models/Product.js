@@ -1,14 +1,12 @@
-const mongoose = require("mongoose");
-
 const productSchema = new mongoose.Schema({
   name: String,
   price: Number,
   store: String,
-  image: String,        // รูปหลัก (เดิม)
-  images: [String],     // รูปเพิ่มเติม (ใหม่) ← เพิ่มบรรทัดนี้
+  image: String,
+  images: [String],
   description: String,
   stock: Number,
   active: Boolean,
+  colors: [{ name: String }],  // ← เพิ่มบรรทัดนี้
   createdAt: { type: Date, default: Date.now }
 });
-module.exports = mongoose.model("Product", productSchema);
