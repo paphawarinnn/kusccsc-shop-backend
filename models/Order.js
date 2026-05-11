@@ -6,6 +6,7 @@ const orderItemSchema = new mongoose.Schema({
   price: Number,
   quantity: Number,
   image: String,
+  selectedColor: { type: String, default: "" }, // ← เพิ่มตรงนี้
 });
 
 const orderSchema = new mongoose.Schema({
