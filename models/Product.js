@@ -9,8 +9,8 @@ const productSchema = new mongoose.Schema({
   description: String,
   stock: Number,
   active: Boolean,
-  colors: [{ name: String }],
+  colors: [{ name: String, price: Number }],  // ← เพิ่ม price
   createdAt: { type: Date, default: Date.now }
 });
 
-module.exports = mongoose.model("Product", productSchema);  // ← เพิ่มบรรทัดนี้
+module.exports = mongoose.model("Product", productSchema);
